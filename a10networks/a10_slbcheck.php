@@ -1,6 +1,7 @@
 #!/usr/bin/php
 <?php
-$options = getopt("m:u:p:s:w:c");
+$options = getopt("m:u:p:s:w:c:");
+
 if(sizeof($options) < 5)
 {
 	die("usage: php a10_slbcheck.php -m HOSTNAME -u USER -p PASSWORD -s slbname -w num_members_warning -c num_members_crit" . PHP_EOL);
@@ -18,13 +19,18 @@ $warn   = $options['w'];
 $crit   = $options['c'];
 
 $info = getSLBInfo();
-
 $state  = $info->{'service-group'}->oper->state;
 $s_up 	= $info->{'service-group'}->oper->servers_up;
 $s_down = $info->{'service-group'}->oper->servers_down;
 $s_tot  = $info->{'service-group'}->oper->servers_total;
 
 //echo "State: $state UP: $s_up DOWN: $s_down TOTAL: $s_tot" . PHP_EOL;
+
+if($state == "Down")
+{
+	echo "CRITICAL - $state - $s_up of $s_tot members online" . PHP_EOL;
+	exit(2);
+}
 
 if($s_up == $s_tot)
 {
@@ -49,6 +55,11 @@ elseif($s_up < $s_tot)
 		{
 			echo "CRITICAL - $state - $s_up of $s_tot members online" . PHP_EOL;
 			exit (2);
+		}
+		else
+		{
+			echo "OK - $state - $s_up of $s_tot members online" . PHP_EOL;
+			exit(0);
 		}	
 	}
 }
@@ -93,6 +104,15 @@ function getSLBInfo()
 
 function getAuthToken($host)
 {
+	$cur_time = time();
+	if(is_file("/tmp/a10token_$host"))
+	{
+		$sp = $cur_time - filemtime ("/tmp/a10token_$host");
+		if($sp < 60)
+		{
+			return file_get_contents("/tmp/a10token_$host");
+		}
+	}
 	global $user; 
 	global $pass;
 	global $debug;
@@ -121,5 +141,8 @@ function getAuthToken($host)
 		exit(2);
 	}
 	$out = json_decode($result);
+	$fp = fopen('/tmp/a10token_'.$host, 'w');
+	fwrite($fp, $out->authresponse->signature);
+	fclose($fp);
 	return $out->authresponse->signature;
 }
